@@ -73,3 +73,4 @@ text/html, json, xml, x-www-form-urlencoded
 - Log Management: The Configuration panel currently lacks a "Clear Logs" option.
 - Scope Restriction: Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
 - Evidence View: Evidence is displayed in a text viewer rather than a Burp-style message editor.
+- Improved Detection: If the repaired request returns a content length nearly identical to the original, this may indicate a potential vulnerability.
