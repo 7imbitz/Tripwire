@@ -61,7 +61,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         self._evidenceTab = None
         self._sql_errors = [
             "sql syntax", "mysql", "odbc", "oracle", "ora-",
-            "unclosed quotation mark", "syntax error", "postgresql", "sqlite", "sql"
+            "unclosed quotation mark", "syntax error", "postgresql", "sqlite"
         ]
         
         # Register listeners
@@ -236,7 +236,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 return
 
             # --- 2. Filter out unwanted paths (logging/analytics/etc.) ---
-            SKIP_KEYWORDS = ["log", "metrics", "analytics", "tracking", "telemetry", "ads"]
+            SKIP_KEYWORDS = ["log", "metrics", "analytics", "tracking", "telemetry", "ads", "embed"]
             if any(kw in urlPath for kw in SKIP_KEYWORDS):
                 return
 
@@ -268,8 +268,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     # Very basic SQL error fingerprinting
                     sql_errors = [
                         "sql syntax", "mysql", "odbc", "oracle", "ora-",
-                        "unclosed quotation mark", "syntax error", "postgresql", "sqlite",
-                        "sql"
+                        "unclosed quotation mark", "syntax error", "postgresql", "sqlite"
                     ]
 
                     if any(err in body for err in sql_errors):
