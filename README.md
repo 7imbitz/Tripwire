@@ -7,9 +7,9 @@ Tripwire is a Burp Suite extension that automates the detection of common SQL In
 # 📦 Installation
 
 1. Download Burp Suite
-    Get the latest version from: [PortSwigger Burp Suite](http://portswigger.net/burp/download.html)
+    - Get the latest version from: [PortSwigger Burp Suite](http://portswigger.net/burp/download.html)
 2. Download Jython Standalone JAR
-    Obtain the Jython standalone JAR from: [Jython Downloads](http://www.jython.org/download.html)
+    - Obtain the Jython standalone JAR from: [Jython Downloads](http://www.jython.org/download.html)
 3. Configure Python Environment in Burp
     - Go to Extender → Options → Python Environment.
     - Select the downloaded Jython standalone JAR.
@@ -21,7 +21,7 @@ git clone https://github.com/7imbitz/Tripwire.git
     - In Burp, navigate to Extender → Extensions → Add.
     - Choose the extension.py file from the Tripwire source code.
 6. Verify Installation
-    A new Tripwire tab should appear in Burp Suite.
+    - A new Tripwire tab should appear in Burp Suite.
 
 # 🛠 User Guide
 
