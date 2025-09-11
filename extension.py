@@ -1,4 +1,4 @@
-#Clean but checkbox not function
+#Added JSON Request param detection
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
@@ -14,7 +14,7 @@ if sys.version_info[0] == 2:
         pass
 
 # Burp imports
-from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController, ISaveableState
+from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController
 
 # Java imports
 from java.lang import Runnable, Integer
@@ -32,7 +32,7 @@ from javax.swing.text import DefaultHighlighter
 
 
 
-class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, ISaveableState, ActionListener):
+class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, ActionListener):
     """
     Main Burp Suite extension class that implements SQL injection testing
     by comparing original, modified (with single quote), and repaired (with double quote) requests.
@@ -42,6 +42,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Initialize the extension and set up the UI"""
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
+        
+        # Set extension name
         callbacks.setExtensionName("Tripwire")
         
         # Initialize data structures
@@ -65,64 +67,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # Register listeners
         callbacks.registerHttpListener(self)
         callbacks.addSuiteTab(self)
-        callbacks.registerSaveableState(self)
-        self.results = {}
         
         print("Tripwire Extension loaded successfully!")
-        
-    def save(self, out):
-        try:
-            import json
-            saved_items = []
-            for i in range(self._log.size()):
-                entry = self._log.get(i)
-
-                saved_items.append({
-                    "id": entry.id,
-                    "method": entry.method,
-                    "url": entry.url,
-                    "paramName": entry.paramName,
-                    "originalLen": entry.originalLen,
-                    "modifiedLen": entry.modifiedLen,
-                    "repairedLen": entry.repairedLen,
-                    "result": entry.result,
-                    # You could add evidence snippet if you store it in LogEntry
-                })
-
-            data = json.dumps(saved_items)
-            out.write(data.encode("utf-8"))
-            print("[Tripwire] Saved", len(saved_items), "findings")
-        except Exception as e:
-            print("[Tripwire] Save error:", e)
-
-
-    def load(self, ins):
-        try:
-            import json
-            data = ins.read().decode("utf-8")
-            loaded_items = json.loads(data)
-
-            self._log.clear()
-            for item in loaded_items:
-                # Rebuild LogEntry without messageInfo/responses (Burp has them already)
-                entry = LogEntry(
-                    item["id"],
-                    item["method"],
-                    item["url"],
-                    item["originalLen"],
-                    item["modifiedLen"],
-                    item["repairedLen"],
-                    item["paramName"],
-                    None,   # messageInfo not restored (Burp keeps it separately)
-                    None,   # modifiedRequestResponse
-                    None,   # repairedRequestResponse
-                    item["result"]
-                )
-                self._log.add(entry)
-
-            print("[Tripwire] Loaded", len(loaded_items), "findings")
-        except Exception as e:
-            print("[Tripwire] Load error:", e)
     
     def _setupUI(self):
         """Create and configure the main user interface"""
