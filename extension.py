@@ -14,7 +14,7 @@ if sys.version_info[0] == 2:
         pass
 
 # Burp imports
-from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController
+from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController, ISaveableState
 
 # Java imports
 from java.lang import Runnable, Integer
@@ -32,7 +32,7 @@ from javax.swing.text import DefaultHighlighter
 
 
 
-class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, ActionListener):
+class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, ISaveableState, ActionListener):
     """
     Main Burp Suite extension class that implements SQL injection testing
     by comparing original, modified (with single quote), and repaired (with double quote) requests.
@@ -42,8 +42,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Initialize the extension and set up the UI"""
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        
-        # Set extension name
         callbacks.setExtensionName("Tripwire")
         
         # Initialize data structures
@@ -67,8 +65,64 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # Register listeners
         callbacks.registerHttpListener(self)
         callbacks.addSuiteTab(self)
+        callbacks.registerSaveableState(self)
+        self.results = {}
         
-        print("Tripwire Extension loaded!")
+        print("Tripwire Extension loaded successfully!")
+        
+    def save(self, out):
+        try:
+            import json
+            saved_items = []
+            for i in range(self._log.size()):
+                entry = self._log.get(i)
+
+                saved_items.append({
+                    "id": entry.id,
+                    "method": entry.method,
+                    "url": entry.url,
+                    "paramName": entry.paramName,
+                    "originalLen": entry.originalLen,
+                    "modifiedLen": entry.modifiedLen,
+                    "repairedLen": entry.repairedLen,
+                    "result": entry.result,
+                    # You could add evidence snippet if you store it in LogEntry
+                })
+
+            data = json.dumps(saved_items)
+            out.write(data.encode("utf-8"))
+            print("[Tripwire] Saved", len(saved_items), "findings")
+        except Exception as e:
+            print("[Tripwire] Save error:", e)
+
+
+    def load(self, ins):
+        try:
+            import json
+            data = ins.read().decode("utf-8")
+            loaded_items = json.loads(data)
+
+            self._log.clear()
+            for item in loaded_items:
+                # Rebuild LogEntry without messageInfo/responses (Burp has them already)
+                entry = LogEntry(
+                    item["id"],
+                    item["method"],
+                    item["url"],
+                    item["originalLen"],
+                    item["modifiedLen"],
+                    item["repairedLen"],
+                    item["paramName"],
+                    None,   # messageInfo not restored (Burp keeps it separately)
+                    None,   # modifiedRequestResponse
+                    None,   # repairedRequestResponse
+                    item["result"]
+                )
+                self._log.add(entry)
+
+            print("[Tripwire] Loaded", len(loaded_items), "findings")
+        except Exception as e:
+            print("[Tripwire] Load error:", e)
     
     def _setupUI(self):
         """Create and configure the main user interface"""
@@ -250,7 +304,28 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             # Extract non-cookie parameters
             parameters = [p for p in requestInfo.getParameters() if p.getType() != p.PARAM_COOKIE]
             if not parameters:
-                return
+                try:
+                    body_bytes = originalRequest[requestInfo.getBodyOffset():]
+                    body_str = self._helpers.bytesToString(body_bytes)
+
+                    content_type = ""
+                    for h in requestInfo.getHeaders():
+                        if h.lower().startswith("content-type"):
+                            content_type = h.lower()
+                            break
+
+                    if "application/json" in content_type:
+                        import json
+                        try:
+                            parsed_json = json.loads(body_str)
+                            if isinstance(parsed_json, dict):
+                                self._processJsonRecursive(messageInfo, parsed_json, [])
+                        except Exception as e:
+                            print("JSON parse failed:", e)
+                except Exception as e:
+                    print("Error handling JSON body:", e)
+
+
 
             # For each parameter, test individually
             for param in parameters:
@@ -308,26 +383,132 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         except Exception as e:
             print("Error processing message: " + str(e))
+    
+    def _processJsonRecursive(self, messageInfo, node, path):
+        """Recursively walk JSON dicts/lists and inject payloads at each key/value"""
+        if isinstance(node, dict):
+            for key, value in node.items():
+                current_path = path + [key]
+                self._processJsonParam(messageInfo, current_path, node)
+                self._processJsonRecursive(messageInfo, value, current_path)
+        elif isinstance(node, list):
+            for i, item in enumerate(node):
+                self._processJsonRecursive(messageInfo, item, path + [str(i)])
 
+    
+    def _processJsonParam(self, messageInfo, path, parsed_json):
+        try:
+            method = self._helpers.analyzeRequest(messageInfo).getMethod()
+            url = self._helpers.analyzeRequest(messageInfo).getUrl()
+
+            import copy, json
+            mutated = copy.deepcopy(parsed_json)
+
+            # Walk down path and inject
+            node = mutated
+            for p in path[:-1]:
+                node = node[p]
+            last_key = path[-1]
+            node[last_key] = str(node[last_key]) + "'"
+
+            new_body = json.dumps(mutated)
+            headers = self._helpers.analyzeRequest(messageInfo).getHeaders()
+            new_message = self._helpers.buildHttpMessage(headers, new_body)
+
+            httpService = messageInfo.getHttpService()
+            modifiedReqResp = self._callbacks.makeHttpRequest(httpService, new_message)
+
+            # Check result
+            result = ""
+            if modifiedReqResp and modifiedReqResp.getResponse():
+                resp = modifiedReqResp.getResponse()
+                respInfo = self._helpers.analyzeResponse(resp)
+                body = resp[respInfo.getBodyOffset():].tostring().lower()
+                if any(err in body for err in self._sql_errors):
+                    result = "Possible(?)"
+
+            # Repaired variant
+            repaired = copy.deepcopy(parsed_json)
+            node = repaired
+            for p in path[:-1]:
+                node = node[p]
+            node[last_key] = str(node[last_key]) + "''"
+            repaired_body = json.dumps(repaired)
+            repaired_msg = self._helpers.buildHttpMessage(headers, repaired_body)
+            repairedReqResp = self._callbacks.makeHttpRequest(httpService, repaired_msg)
+
+            logEntry = LogEntry(
+                self.currentRequestNumber,
+                method,
+                str(url),
+                len(messageInfo.getResponse()) if messageInfo.getResponse() else 0,
+                len(modifiedReqResp.getResponse()) if modifiedReqResp else 0,
+                len(repairedReqResp.getResponse()) if repairedReqResp else 0,
+                ".".join(path),  # key path like user.email
+                messageInfo,
+                modifiedReqResp,
+                repairedReqResp,
+                result
+            )
+
+            with self._lock:
+                self._log.add(logEntry)
+                row = self._log.size() - 1
+                SwingUtilities.invokeLater(UpdateTableRunnable(self._tableModel, row))
+                self.currentRequestNumber += 1
+
+        except Exception as e:
+            print("Error processing JSON param:", e)
 
     
     def _performSQLInjection(self, originalMessageInfo, param, payload):
         """Perform SQL injection by modifying a single parameter with the given payload"""
         try:
-            # Get original request
+            # Extract request + info
             originalRequest = originalMessageInfo.getRequest()
+            requestInfo = self._helpers.analyzeRequest(originalMessageInfo)
 
-            # Create new parameter with payload
-            newParam = self._helpers.buildParameter(
-                param.getName(),
-                param.getValue() + payload,
-                param.getType()
-            )
+            headers = requestInfo.getHeaders()
+            body_bytes = originalRequest[requestInfo.getBodyOffset():]
+            body_str = self._helpers.bytesToString(body_bytes)
 
-            # Update request with new parameter
-            modifiedRequest = self._helpers.updateParameter(originalRequest, newParam)
+            # Check if this is JSON
+            is_json = any("application/json" in h.lower() for h in headers if h.lower().startswith("content-type"))
 
-            # Make the request
+            if is_json:
+                # --- JSON case ---
+                import json, copy
+
+                try:
+                    parsed_json = json.loads(body_str)
+                except Exception:
+                    print("[!] Failed to parse JSON body")
+                    return None
+
+                mutated = copy.deepcopy(parsed_json)
+
+                # Only mutate the specific parameter we're testing
+                key = param.getName()
+                if key in mutated:
+                    mutated[key] = str(mutated[key]) + payload
+                else:
+                    print("[!] JSON key not found:", key)
+                    return None
+
+                # Rebuild request
+                new_body = json.dumps(mutated)
+                modifiedRequest = self._helpers.buildHttpMessage(headers, new_body)
+
+            else:
+                # --- Normal case (query, form, cookie, etc.) ---
+                newParam = self._helpers.buildParameter(
+                    param.getName(),
+                    param.getValue() + payload,
+                    param.getType()
+                )
+                modifiedRequest = self._helpers.updateParameter(originalRequest, newParam)
+
+            # Send modified request
             httpService = originalMessageInfo.getHttpService()
             modifiedRequestResponse = self._callbacks.makeHttpRequest(httpService, modifiedRequest)
 
