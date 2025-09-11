@@ -72,7 +72,7 @@ text/html, json, xml, x-www-form-urlencoded
 
 ## 🔍 Detection Improvements
 - Expanded SQL Error Fingerprints
-    - Added a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
+    - To add a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
 - Context-Aware Payload Injection:
     - _Numeric params_
         - break -> `1/0`
@@ -80,20 +80,20 @@ text/html, json, xml, x-www-form-urlencoded
     - _String params_
         - break -> `'`
         - repair -> `''`
-- Improved Detection
+- Improve Detection
     - If the repaired request’s response length closely matches the original request, this is treated as a stronger indicator of potential SQLi.
 
 ## 📝 Usability & Reporting
 - Log Management
-    - Added a "Clear Logs" option in the Configuration panel for easier session cleanup.
+    - Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
 - Scope Restriction
     - Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
 - Evidence View 
-    - Replaced the plain text viewer with a Burp-style message editor for better readability and context.
+    - Replace the plain text viewer with a Burp-style message editor for better readability and context.
 - Persistence with Burp Project File
     - To include the logging in the extension inside the burp file.
 - Severity Scoring:
-    - Flag results with a confidence level:
+    - To flag results with a confidence level:
         - High: Known SQL error message detected.
         - Medium: Response code/length anomaly.
         - Low: Only slight timing deviation.
