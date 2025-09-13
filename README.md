@@ -71,29 +71,32 @@ text/html, json, xml, x-www-form-urlencoded
 # ⚠ Current Limitations
 
 ## 🔍 Detection Improvements
-- Expanded SQL Error Fingerprints
-    - To add a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
-- Context-Aware Payload Injection:
-    - _Numeric params_
-        - break -> `/0`
-        - repair -> `/1`
-    - _String params_
-        - break -> `'`
-        - repair -> `''`
-- Improve Detection
-    - If the repaired request’s response length closely matches the original request, this is treated as a stronger indicator of potential SQLi.
+- [ ] Expanded SQL Error Fingerprints
+    - [ ] To add a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
+- [ ] Context-Aware Payload Injection:
+    - [ ] _Numeric params_
+        - [ ] break -> `/0`
+        - [ ] repair -> `/1`
+    - [ ] _String params_
+        - [ ] break -> `'`
+        - [ ] repair -> `''`
+- [ ] Improve Detection
+    - [ ] If the repaired request’s response length closely matches the original request, this is treated as a stronger indicator of potential SQLi.
 
 ## 📝 Usability & Reporting
-- Log Management
-    - Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
-- Scope Restriction
-    - Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
+- [X] Log Management
+    - [X] Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
+- [ ] Scope Restriction
+    - [ ] Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
 - [X] Evidence View 
     - [X] Replace the plain text viewer with a Burp-style message editor for better readability and context.
-- [<] Persistence with Burp Project File
-    - [<] To include the logging in the extension inside the burp file.
-- [<] Severity Scoring:
-    - [<] To flag results with a confidence level:
-        - [<] High: Known SQL error message detected.
-        - [<] Medium: Response code/length anomaly.
-        - [<] Low: Only slight timing deviation.
+- [ ] Persistence with Burp Project File
+    - [ ] To include the logging in the extension inside the burp file.
+- [ ] Severity Scoring:
+    - [ ] To flag results with a confidence level:
+        - [ ] High: Known SQL error message detected.
+        - [ ] Medium: Response code/length anomaly.
+        - [ ] Low: Only slight timing deviation.
+- [ ] Dynamic Rule
+    - [ ] Dynamically set unwanted paths and extensions
+    - [ ] Dynamically set SQL Error signatures

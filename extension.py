@@ -44,6 +44,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         callbacks.setExtensionName("Tripwire")
         
         self._log = ArrayList()
+        self._tableModel = LogTableModel(self._log)
         self._lock = threading.Lock()
         self.currentRequestNumber = 1
         self._currentlyDisplayedItem = None
@@ -88,7 +89,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         tablePanel = JPanel(BorderLayout())
         
         # Create table model and table
-        self._tableModel = LogTableModel(self._log)
         self._table = JTable(self._tableModel)
         self._table.setAutoCreateRowSorter(True)
         self._table.getColumn("Result").setCellRenderer(ResultCellRenderer())
@@ -443,33 +443,51 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def _createConfigPanel(self):
         panel = JPanel(BorderLayout())
 
-        # Inner panel with FlowLayout to center the button
-        centerPanel = JPanel(FlowLayout(FlowLayout.CENTER))
+        # Inner panel with FlowLayout (center alignment, side-by-side)
+        centerPanel = JPanel(FlowLayout(FlowLayout.CENTER, 20, 10))  
+        # (20 = horizontal gap, 10 = vertical gap, tweak if needed)
 
-        # Create capture button and set initial state based on self._captureEnabled
-        if getattr(self, '_captureEnabled', False):
+        # --- Capture Button ---
+        if getattr(self, "_captureEnabled", False):
             btn_text = "Capture ON"
             btn_bg = Color(0, 200, 0)
         else:
             btn_text = "Capture OFF"
             btn_bg = None
 
-
-        self._captureButton = JButton(btn_text, actionPerformed=self.actionPerformed)
-        self._captureButton.setPreferredSize(Dimension(120, 35)) # width=120px, height=35px
-        if btn_bg is not None:
+        self._captureButton = JButton(btn_text)
+        if btn_bg:
             self._captureButton.setBackground(btn_bg)
-            self._captureButton.setOpaque(True)
-        else:
-        # ensure default background and non-opaque so it looks like normal button
-            try:
-                self._captureButton.setOpaque(False)
-            except:
-                pass
-            
-        centerPanel.add(self._captureButton)
-        panel.add(centerPanel, BorderLayout.CENTER)
 
+        def toggleCapture(_):
+            self._captureEnabled = not self._captureEnabled
+            if self._captureEnabled:
+                self._captureButton.setText("Capture ON")
+                self._captureButton.setBackground(Color(0, 200, 0))
+            else:
+                self._captureButton.setText("Capture OFF")
+                self._captureButton.setBackground(None)
+
+        self._captureButton.addActionListener(toggleCapture)
+
+        # --- Clear Logs Button ---
+        clearBtn = JButton("Clear Logs")
+
+        def onClear(_):
+            try:
+                self._tableModel.clearLogs()
+            except Exception as e:
+                print("Error clearing logs:", e)
+
+        clearBtn.addActionListener(onClear)
+
+        # Add both buttons side by side
+        centerPanel.add(self._captureButton)
+        self._captureButton.setPreferredSize(Dimension(120, 35))
+        centerPanel.add(clearBtn)
+        clearBtn.setPreferredSize(Dimension(120,35))
+
+        panel.add(centerPanel, BorderLayout.CENTER)
         return panel
     
     def _createTabs(self):
@@ -691,6 +709,10 @@ class LogTableModel(AbstractTableModel):
         if columnIndex in [0, 3, 4, 5, 6]:
             return Integer  # numeric sorting
         return str
+    
+    def clearLogs(self):
+        self._log.clear()
+        self.fireTableDataChanged()
 
 class HighlightedTextPane(JTextPane):
     def __init__(self, keywords):
