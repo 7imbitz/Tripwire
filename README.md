@@ -75,8 +75,8 @@ text/html, json, xml, x-www-form-urlencoded
     - To add a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
 - Context-Aware Payload Injection:
     - _Numeric params_
-        - break -> `1/0`
-        - repair -> `1/1`
+        - break -> `/0`
+        - repair -> `/1`
     - _String params_
         - break -> `'`
         - repair -> `''`
@@ -88,12 +88,12 @@ text/html, json, xml, x-www-form-urlencoded
     - Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
 - Scope Restriction
     - Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
-- Evidence View 
-    - Replace the plain text viewer with a Burp-style message editor for better readability and context.
-- Persistence with Burp Project File
-    - To include the logging in the extension inside the burp file.
-- Severity Scoring:
-    - To flag results with a confidence level:
-        - High: Known SQL error message detected.
-        - Medium: Response code/length anomaly.
-        - Low: Only slight timing deviation.
+- [X] Evidence View 
+    - [X] Replace the plain text viewer with a Burp-style message editor for better readability and context.
+- [<] Persistence with Burp Project File
+    - [<] To include the logging in the extension inside the burp file.
+- [<] Severity Scoring:
+    - [<] To flag results with a confidence level:
+        - [<] High: Known SQL error message detected.
+        - [<] Medium: Response code/length anomaly.
+        - [<] Low: Only slight timing deviation.

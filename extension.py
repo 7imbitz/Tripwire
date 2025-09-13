@@ -31,7 +31,6 @@ from java.util import ArrayList
 from javax.swing.text import DefaultHighlighter
 
 
-
 class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController, ActionListener):
     """
     Main Burp Suite extension class that implements SQL injection testing
@@ -42,29 +41,25 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Initialize the extension and set up the UI"""
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        
-        # Set extension name
         callbacks.setExtensionName("Tripwire")
         
-        # Initialize data structures
         self._log = ArrayList()
         self._lock = threading.Lock()
         self.currentRequestNumber = 1
         self._currentlyDisplayedItem = None
         
-        self._captureEnabled = True
-        
-        # Set up the user interface
+        # Ensure capture is OFF by default (no UI interaction here!)
+        self._captureEnabled = False
+
+        # Build UI
         self._setupUI()
         
-        # evidence tab state and SQL fingerprint list
         self._evidenceTab = None
         self._sql_errors = [
             "sql syntax", "mysql", "odbc", "oracle", "ora-",
             "unclosed quotation mark", "syntax error", "postgresql", "sqlite"
         ]
         
-        # Register listeners
         callbacks.registerHttpListener(self)
         callbacks.addSuiteTab(self)
         
@@ -98,7 +93,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         self._table.setAutoCreateRowSorter(True)
         self._table.getColumn("Result").setCellRenderer(ResultCellRenderer())
         
-        # Add selection listener
         self._table.getSelectionModel().addListSelectionListener(
             TableSelectionListener(self)
         )
@@ -107,7 +101,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         rowSorter.toggleSortOrder(0)
         rowSorter.toggleSortOrder(0)
         
-        # Set column widths
         columnModel = self._table.getColumnModel()
         columnModel.getColumn(0).setPreferredWidth(50)   # ID
         columnModel.getColumn(1).setPreferredWidth(50)   # Method
@@ -126,10 +119,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Create the viewer panel with tabbed panes for different request/response views"""
         viewerPanel = JPanel(BorderLayout())
         
-        # Create tabbed pane for different views
         self._tabbedPane = JTabbedPane()
         
-        # Original Request/Response tab
         self._originalRequestViewer = self._callbacks.createMessageEditor(self, False)
         self._originalResponseViewer = self._callbacks.createMessageEditor(self, False)
         originalPanel = self._createRequestResponsePanel(
@@ -139,7 +130,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         
         # Modified Request/Response tab (with single quote)
         self._modifiedRequestViewer = self._callbacks.createMessageEditor(self, False)
-        #self._modifiedResponseViewer = HighlightedTextPane(sql_keywords)
         self._modifiedResponseViewer = self._callbacks.createMessageEditor(self, False)
         modifiedPanel = self._createRequestResponsePanel(
             "Modified", self._modifiedRequestViewer, self._modifiedResponseViewer
@@ -164,17 +154,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Create a split panel showing request and response"""
         panel = JPanel(BorderLayout())
         
-        # Create vertical split pane for request/response
         splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT)
         splitPane.setResizeWeight(0.5)
         
-        # Request panel
         requestPanel = JPanel(BorderLayout())
         requestPanel.add(JLabel(title + " Request"), BorderLayout.NORTH)
         requestPanel.add(requestViewer.getComponent(), BorderLayout.CENTER)
         splitPane.setTopComponent(requestPanel)
         
-        # Response panel
         responsePanel = JPanel(BorderLayout())
         responsePanel.add(JLabel(title + " Response"), BorderLayout.NORTH)
         responsePanel.add(responseViewer.getComponent(), BorderLayout.CENTER)
@@ -183,7 +170,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         panel.add(splitPane, BorderLayout.CENTER)
         return panel
     
-    # ITab implementation
     def getTabCaption(self):
         """Return the tab caption for the Burp Suite interface"""
         return "Tripwire"
@@ -192,7 +178,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Return the main UI component"""
         return self._mainPanel
     
-    # IHttpListener implementation
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
         """Process HTTP messages from Burp Suite"""
         if not self._captureEnabled:
@@ -210,18 +195,15 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         t = threading.Thread(target=self._processMessage, args=[messageInfo])
         t.daemon = True
         t.start()
-
     
     def _processMessage(self, messageInfo):
         """Process a single HTTP message for SQL injection testing"""
         try:
-            # Get original request and response
             originalRequest = messageInfo.getRequest()
             originalResponse = messageInfo.getResponse()
             if originalResponse is None:
                 return
 
-            # Parse request
             requestInfo = self._helpers.analyzeRequest(messageInfo)
             method = requestInfo.getMethod()
             url = requestInfo.getUrl()
@@ -270,8 +252,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                             print("JSON parse failed:", e)
                 except Exception as e:
                     print("Error handling JSON body:", e)
-
-
 
             # For each parameter, test individually
             for param in parameters:
@@ -340,7 +320,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         elif isinstance(node, list):
             for i, item in enumerate(node):
                 self._processJsonRecursive(messageInfo, item, path + [str(i)])
-
     
     def _processJsonParam(self, messageInfo, path, parsed_json):
         try:
@@ -364,7 +343,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             httpService = messageInfo.getHttpService()
             modifiedReqResp = self._callbacks.makeHttpRequest(httpService, new_message)
 
-            # Check result
             result = ""
             if modifiedReqResp and modifiedReqResp.getResponse():
                 resp = modifiedReqResp.getResponse()
@@ -405,12 +383,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         except Exception as e:
             print("Error processing JSON param:", e)
-
     
     def _performSQLInjection(self, originalMessageInfo, param, payload):
         """Perform SQL injection by modifying a single parameter with the given payload"""
         try:
-            # Extract request + info
             originalRequest = originalMessageInfo.getRequest()
             requestInfo = self._helpers.analyzeRequest(originalMessageInfo)
 
@@ -464,18 +440,33 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             print("Error performing SQL injection: " + str(e))
             return None
 
-    
     def _createConfigPanel(self):
         panel = JPanel(BorderLayout())
 
         # Inner panel with FlowLayout to center the button
         centerPanel = JPanel(FlowLayout(FlowLayout.CENTER))
 
-        self._captureButton = JButton("Capture ON", actionPerformed=self.actionPerformed)
-        self._captureButton.setPreferredSize(Dimension(120, 35))  # width=120px, height=35px
-        self._captureButton.setBackground(Color(0, 200, 0))       # green when ON
-        self._captureButton.setOpaque(True)
+        # Create capture button and set initial state based on self._captureEnabled
+        if getattr(self, '_captureEnabled', False):
+            btn_text = "Capture ON"
+            btn_bg = Color(0, 200, 0)
+        else:
+            btn_text = "Capture OFF"
+            btn_bg = None
 
+
+        self._captureButton = JButton(btn_text, actionPerformed=self.actionPerformed)
+        self._captureButton.setPreferredSize(Dimension(120, 35)) # width=120px, height=35px
+        if btn_bg is not None:
+            self._captureButton.setBackground(btn_bg)
+            self._captureButton.setOpaque(True)
+        else:
+        # ensure default background and non-opaque so it looks like normal button
+            try:
+                self._captureButton.setOpaque(False)
+            except:
+                pass
+            
         centerPanel.add(self._captureButton)
         panel.add(centerPanel, BorderLayout.CENTER)
 
@@ -522,43 +513,53 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 self._evidenceTab = self._createEvidenceTab(body)
                 self._tabs.addTab("Evidence", self._evidenceTab)
     
-    def _createEvidenceTab(self, bodyText):
-        """Create the Evidence tab with highlighted SQL keywords (bodyText is a Python str)."""
-        textPane = JTextPane()
-        textPane.setEditable(False)
+    def _createEvidenceTab(self, messageInfo):
+        """Create the Evidence tab with highlighted SQL keywords in the response."""
+        # Create a standard Burp message viewer (like Original/Modified tabs)
+        viewer = self._callbacks.createMessageEditor(None, False)
+        viewer.setMessage(messageInfo.getResponse(), False)
+
         try:
-            textPane.setText(bodyText)
-        except Exception:
-            # fallback to safe string
-            textPane.setText(bodyText.encode('utf-8', 'replace'))
+            # Extract body text for keyword highlighting
+            response = messageInfo.getResponse()
+            if response:
+                resInfo = self._helpers.analyzeResponse(response)
+                body_bytes = response[resInfo.getBodyOffset():]
+                body_text = self._helpers.bytesToString(body_bytes)
 
-        highlighter = textPane.getHighlighter()
-        # remove any previous highlights
-        try:
-            highlighter.removeAllHighlights()
-        except:
-            pass
+                # Build a JTextPane overlay for highlighting
+                textPane = JTextPane()
+                textPane.setEditable(False)
+                textPane.setText(body_text)
 
-        painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 0))  # yellow
+                highlighter = textPane.getHighlighter()
+                highlighter.removeAllHighlights()
+                painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 0))
 
-        text_lower = bodyText.lower()
-        for keyword in getattr(self, "_sql_errors", []):
-            kw = keyword.lower()
-            start = 0
-            while True:
-                idx = text_lower.find(kw, start)
-                if idx == -1:
-                    break
-                try:
-                    highlighter.addHighlight(idx, idx + len(kw), painter)
-                except Exception:
-                    # ignore if bounds are problematic
-                    pass
-                start = idx + len(kw)
+                text_lower = body_text.lower()
+                for keyword in getattr(self, "_sql_errors", []):
+                    kw = keyword.lower()
+                    start = 0
+                    while True:
+                        idx = text_lower.find(kw, start)
+                        if idx == -1:
+                            break
+                        try:
+                            highlighter.addHighlight(idx, idx + len(kw), painter)
+                        except:
+                            pass
+                        start = idx + len(kw)
 
-        return JScrollPane(textPane)
+                # Wrap both Burp viewer + evidence panel
+                tabs = JTabbedPane()
+                tabs.addTab("Raw", viewer.getComponent())
+                tabs.addTab("Highlighted", JScrollPane(textPane))
 
+                return tabs
 
+        except Exception as e:
+            # fallback to just Burp viewer if highlighting fails
+            return viewer.getComponent()
 
     def _highlightKeyword(self, textPane, keyword, highlighter):
         """Highlight all occurrences of keyword in yellow inside textPane (case-insensitive)"""
@@ -582,9 +583,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 # ignore highlight errors (e.g., invalid bounds)
                 pass
             start = idx + len(kw)
-
-
-
     
     # IMessageEditorController implementation
     def getHttpService(self):
@@ -605,13 +603,21 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     # ActionListener implementation
     def actionPerformed(self, actionEvent):
         if actionEvent.getSource() == self._captureButton:
-            self._captureEnabled = not self._captureEnabled
+            self._captureEnabled = not getattr(self, '_captureEnabled', False)
             if self._captureEnabled:
                 self._captureButton.setText("Capture ON")
-                self._captureButton.setBackground(Color(0, 200, 0))  # green
+                try:
+                    self._captureButton.setBackground(Color(0, 200, 0))  # green
+                    self._captureButton.setOpaque(True)
+                except:
+                    pass
             else:
                 self._captureButton.setText("Capture OFF")
-                self._captureButton.setBackground(None)              # default
+                try:
+                    self._captureButton.setBackground(None)  # default
+                    self._captureButton.setOpaque(False)
+                except:
+                    pass
 
 class ResultCellRenderer(DefaultTableCellRenderer):
     def getTableCellRendererComponent(self, table, value, isSelected, hasFocus, row, column):
@@ -627,7 +633,6 @@ class ResultCellRenderer(DefaultTableCellRenderer):
             comp.setForeground(Color.black)
 
         return comp
-
 
 class LogEntry:
     """Data class representing a single log entry with original, modified, and repaired requests"""
@@ -645,8 +650,6 @@ class LogEntry:
         self._modifiedRequestResponse = modifiedRequestResponse
         self._repairedRequestResponse = repairedRequestResponse
         self.result = result
-
-
 
 class LogTableModel(AbstractTableModel):
     def __init__(self, log):
@@ -787,7 +790,7 @@ class TableSelectionListener(ListSelectionListener):
 
                     if body_text and any(err in body_text.lower() for err in getattr(self._extender, "_sql_errors", [])):
                         # create and insert Evidence tab at position 2
-                        evidence_comp = self._extender._createEvidenceTab(body_text)
+                        evidence_comp = self._extender._createEvidenceTab(logEntry._modifiedRequestResponse)
                         self._extender._evidenceTab = evidence_comp
                         try:
                             # insert at index 2 so order becomes Original|Modified|Evidence|Repaired|Configuration
@@ -815,9 +818,6 @@ class TableSelectionListener(ListSelectionListener):
                 self._extender._evidenceTab = None
         except Exception:
             pass
-
-
-
 
 class UpdateTableRunnable(Runnable):
     """Runnable for updating the table model in the Swing EDT"""
