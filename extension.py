@@ -475,7 +475,29 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         def onClear(_):
             try:
+                # clear the log table
                 self._tableModel.clearLogs()
+
+                # also clear all viewers
+                try:
+                    empty_bytes = bytearray()
+                    self._originalRequestViewer.setMessage(empty_bytes, True)
+                    self._originalResponseViewer.setMessage(empty_bytes, False)
+                    self._modifiedRequestViewer.setMessage(empty_bytes, True)
+                    self._modifiedResponseViewer.setMessage(empty_bytes, False)
+                    self._repairedRequestViewer.setMessage(empty_bytes, True)
+                    self._repairedResponseViewer.setMessage(empty_bytes, False)
+                except Exception as e:
+                    print("Error clearing viewers:", e)
+
+                # optionally clear Evidence tab too
+                if getattr(self, "_evidenceTab", None):
+                    try:
+                        self._tabbedPane.remove(self._evidenceTab)
+                        self._evidenceTab = None
+                    except Exception:
+                        pass
+
             except Exception as e:
                 print("Error clearing logs:", e)
 
