@@ -24,7 +24,8 @@ from javax.swing.event import ListSelectionListener
 from javax.swing import (
     JPanel, JTable, JSplitPane, JScrollPane, 
     JLabel, SwingUtilities, JTabbedPane,
-    JButton, JTextPane
+    JButton, JTextPane, JSeparator, SwingConstants,
+    BoxLayout, BorderFactory, JTextArea
 )
 from javax.swing.table import AbstractTableModel, DefaultTableCellRenderer
 from java.util import ArrayList
@@ -41,7 +42,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Initialize the extension and set up the UI"""
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        callbacks.setExtensionName("Tripwire")
+        callbacks.setExtensionName("Tripwire Extension")
         
         self._log = ArrayList()
         self._tableModel = LogTableModel(self._log)
@@ -49,17 +50,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         self.currentRequestNumber = 1
         self._currentlyDisplayedItem = None
         
-        # Ensure capture is OFF by default (no UI interaction here!)
         self._captureEnabled = False
 
-        # Build UI
         self._setupUI()
-        
+
         self._evidenceTab = None
-        self._sql_errors = [
-            "sql syntax", "mysql", "odbc", "oracle", "ora-",
-            "unclosed quotation mark", "syntax error", "postgresql", "sqlite"
-        ]
         
         callbacks.registerHttpListener(self)
         callbacks.addSuiteTab(self)
@@ -88,7 +83,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         """Create the table panel showing request logs"""
         tablePanel = JPanel(BorderLayout())
         
-        # Create table model and table
         self._table = JTable(self._tableModel)
         self._table.setAutoCreateRowSorter(True)
         self._table.getColumn("Result").setCellRenderer(ResultCellRenderer())
@@ -98,7 +92,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         )
         
         rowSorter = self._table.getRowSorter()
-        rowSorter.toggleSortOrder(0)
         rowSorter.toggleSortOrder(0)
         
         columnModel = self._table.getColumnModel()
@@ -208,13 +201,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             method = requestInfo.getMethod()
             url = requestInfo.getUrl()
             urlPath = url.getPath().lower() if url else ""
+            
+            excluded_exts = self.get_excluded_extensions()
 
-            # --- 1. Filter out static file extensions ---
-            STATIC_EXTENSIONS = (
-                ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".ico",
-                ".svg", ".woff", ".woff2", ".ttf", ".eot", ".map", ".mp4", ".webm"
-            )
-            if any(urlPath.endswith(ext) for ext in STATIC_EXTENSIONS):
+            if any(urlPath.endswith(ext) for ext in excluded_exts):
                 return
 
             # --- 2. Filter out unwanted paths (logging/analytics/etc.) ---
@@ -265,15 +255,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 if modifiedResponse:
                     responseInfo = self._helpers.analyzeResponse(modifiedResponse)
                     body = modifiedResponse[responseInfo.getBodyOffset():].tostring().lower()
+                    
+                    sql_signatures = self.get_sql_error_signatures()
 
-                    # Very basic SQL error fingerprinting
-                    sql_errors = [
-                        "sql syntax", "mysql", "odbc", "oracle", "ora-",
-                        "unclosed quotation mark", "syntax error", "postgresql", "sqlite"
-                    ]
-
-                    if any(err in body for err in sql_errors):
+                    if any(err in body for err in sql_signatures):
                         result = "Possible(?)"
+                        for err in sql_signatures:
+                            if err in body:
+                                print("  matched keyword:", err)
 
                 # Build repaired request (param + '')
                 repairedRequestResponse = self._performSQLInjection(messageInfo, param, "''")
@@ -325,6 +314,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         try:
             method = self._helpers.analyzeRequest(messageInfo).getMethod()
             url = self._helpers.analyzeRequest(messageInfo).getUrl()
+            sql_signatures = self.get_sql_error_signatures()
 
             import copy, json
             mutated = copy.deepcopy(parsed_json)
@@ -348,7 +338,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 resp = modifiedReqResp.getResponse()
                 respInfo = self._helpers.analyzeResponse(resp)
                 body = resp[respInfo.getBodyOffset():].tostring().lower()
-                if any(err in body for err in self._sql_errors):
+                if any(err in body for err in sql_signatures):
                     result = "Possible(?)"
 
             # Repaired variant
@@ -441,23 +431,22 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             return None
 
     def _createConfigPanel(self):
-        panel = JPanel(BorderLayout())
+        panel = JPanel(BorderLayout(10, 10))
+        panel.setLayout(BoxLayout(panel, BoxLayout.Y_AXIS))
+        panel.setBorder(BorderFactory.createTitledBorder("Extension Settings"))
 
-        # Inner panel with FlowLayout (center alignment, side-by-side)
-        centerPanel = JPanel(FlowLayout(FlowLayout.CENTER, 20, 10))  
+        topPanel = JPanel(FlowLayout(FlowLayout.CENTER, 40, 10))  
         # (20 = horizontal gap, 10 = vertical gap, tweak if needed)
 
-        # --- Capture Button ---
         if getattr(self, "_captureEnabled", False):
-            btn_text = "Capture ON"
-            btn_bg = Color(0, 200, 0)
+            btn_text, btn_bg = "Capture ON", Color(0, 200, 0)
         else:
-            btn_text = "Capture OFF"
-            btn_bg = None
+            btn_text, btn_bg = "Capture OFF", None
 
         self._captureButton = JButton(btn_text)
         if btn_bg:
             self._captureButton.setBackground(btn_bg)
+        self._captureButton.setPreferredSize(Dimension(120, 35))
 
         def toggleCapture(_):
             self._captureEnabled = not self._captureEnabled
@@ -469,9 +458,13 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 self._captureButton.setBackground(None)
 
         self._captureButton.addActionListener(toggleCapture)
+        topPanel.add(self._captureButton)
 
         # --- Clear Logs Button ---
         clearBtn = JButton("Clear Logs")
+        clearBtn.setPreferredSize(Dimension(120,35))
+        topPanel.add(clearBtn)
+        panel.add(topPanel, BorderLayout.NORTH)
 
         def onClear(_):
             try:
@@ -490,7 +483,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 except Exception as e:
                     print("Error clearing viewers:", e)
 
-                # optionally clear Evidence tab too
+                # clear Evidence tab 
                 if getattr(self, "_evidenceTab", None):
                     try:
                         self._tabbedPane.remove(self._evidenceTab)
@@ -503,14 +496,112 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         clearBtn.addActionListener(onClear)
 
-        # Add both buttons side by side
-        centerPanel.add(self._captureButton)
-        self._captureButton.setPreferredSize(Dimension(120, 35))
-        centerPanel.add(clearBtn)
-        clearBtn.setPreferredSize(Dimension(120,35))
+        panel.add(JSeparator(SwingConstants.HORIZONTAL))
+        
+        sqlErrorPanel = JPanel()
+        sqlErrorPanel.setLayout(BoxLayout(sqlErrorPanel, BoxLayout.Y_AXIS))
+        sqlErrorPanel.setBorder(BorderFactory.createTitledBorder("SQL Error"))
+        
+        self._sqlErrorArea = JTextArea(
+            ", ".join([
+                '"sql syntax"', '"mysql"', '"odbc"', '"oracle"', '"ora-"',
+                '"unclosed quotation mark"', '"syntax error"', '"postgresql"', '"sqlite"'
+            ])
+        )
+        self._sqlErrorArea.setLineWrap(True)
+        self._sqlErrorArea.setWrapStyleWord(True)
+        
+        scrollPane = JScrollPane(self._sqlErrorArea)
+        scrollPane.setPreferredSize(Dimension(300, 350))
 
-        panel.add(centerPanel, BorderLayout.CENTER)
+        buttonPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+        saveButton = JButton("Save signature", actionPerformed=self.saveSqlSignatures)
+        clearButton = JButton("Clear signature", actionPerformed=self.clearSqlSignatures)
+        buttonPanel.add(saveButton)
+        buttonPanel.add(clearButton)
+
+        sqlErrorPanel.add(scrollPane)
+        sqlErrorPanel.add(buttonPanel)
+
+        panel.add(sqlErrorPanel, BorderLayout.CENTER)
+        
+        excludePanel = JPanel()
+        excludePanel.setLayout(BoxLayout(excludePanel, BoxLayout.Y_AXIS))
+        excludePanel.setBorder(BorderFactory.createTitledBorder("Excluded Extension"))
+        
+        self._notExtensionArea = JTextArea(
+            ",".join([
+                '".js"', '".css"', '".png"', '".jpg"', '".jpeg"', 
+                '".gif"', '".ico"', '".svg"', '".woff"', '".woff2"', 
+                '".ttf"', '".eot"', '".map"', '".mp4"', '".webm"',
+            ])
+        )
+        self._notExtensionArea.setLineWrap(True)
+        self._notExtensionArea.setWrapStyleWord(True)
+        
+        scrollPane = JScrollPane(self._notExtensionArea)
+        scrollPane.setPreferredSize(Dimension(300,350))
+        
+        buttonExtPanel = JPanel(FlowLayout(FlowLayout.RIGHT))
+        saveExtButton = JButton("Save Extension", actionPerformed=self.saveExtErrors)
+        clearExtButton = JButton("Clear Extension", actionPerformed=self.clearExtErrors)
+        buttonExtPanel.add(saveExtButton)
+        buttonExtPanel.add(clearExtButton)
+
+        excludePanel.add(scrollPane)
+        excludePanel.add(buttonExtPanel)
+        
+        panel.add(excludePanel, BorderLayout.SOUTH)
+        
         return panel
+    
+    def saveSqlSignatures(self, event):
+        self._sqlErrorList = self.get_sql_error_signatures()
+        self.sql_signatures = self._sqlErrorList
+        print("[*] SQL Signature updated:", self.sql_signatures)
+
+    def clearSqlSignatures(self, event):
+        self._sqlErrorArea.setText("")
+        self._sqlErrorList = []
+        print("[*] SQL Signature cleared")
+        
+    def get_sql_error_signatures(self):
+        if getattr(self, "_sqlErrorList", None):
+            return [s.lower() for s in self._sqlErrorList]
+        text = (self._sqlErrorArea.getText() or "").strip()
+        items = [s.strip().strip('"').strip("'") for s in text.split(",") if s.strip()]
+        print("[*] Fetching updated signature...")
+        print(items)
+        return [it.lower() for it in items]
+        
+    def saveExtErrors(self, event):
+        self._extErrorList = self.get_excluded_extensions()
+        self.excluded_exts = self._extErrorList
+        print("[*] Excluded Extension updated:", self._extErrorList)
+
+    def clearExtErrors(self, event):
+        self._notExtensionArea.setText("")
+        self._extErrorList = []
+        print("[*] Excluded Extension cleared")
+    
+    def get_excluded_extensions(self):
+        # Return extensions in a canonical form, e.g. ".js", "png" -> ".png"
+        if getattr(self, "_extErrorList", None):
+            raw = self._extErrorList
+        else:
+            text = (self._notExtensionArea.getText() or "").strip()
+            raw = [s.strip().strip('"').strip("'") for s in text.split(",") if s.strip()]
+
+        out = []
+        for it in raw:
+            if not it:
+                continue
+            # if user wrote ".js" or "js" -> normalize to ".js"
+            val = it.lower()
+            if not val.startswith("."):
+                val = "." + val
+            out.append(val)
+        return out
     
     def _createTabs(self):
         """Create the lower tabs (Original, Modified, Repaired, Evidence)"""
@@ -558,6 +649,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # Create a standard Burp message viewer (like Original/Modified tabs)
         viewer = self._callbacks.createMessageEditor(None, False)
         viewer.setMessage(messageInfo.getResponse(), False)
+        print("[*] Creating evidence tab...")
 
         try:
             # Extract body text for keyword highlighting
@@ -566,6 +658,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 resInfo = self._helpers.analyzeResponse(response)
                 body_bytes = response[resInfo.getBodyOffset():]
                 body_text = self._helpers.bytesToString(body_bytes)
+                sql_signatures = self.get_sql_error_signatures()
 
                 # Build a JTextPane overlay for highlighting
                 textPane = JTextPane()
@@ -577,8 +670,9 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 0))
 
                 text_lower = body_text.lower()
-                for keyword in getattr(self, "_sql_errors", []):
+                for keyword in sql_signatures:
                     kw = keyword.lower()
+                    print("[*] keyword: ", kw)
                     start = 0
                     while True:
                         idx = text_lower.find(kw, start)
@@ -709,7 +803,7 @@ class LogTableModel(AbstractTableModel):
         logEntry = self._log.get(rowIndex)
         
         if columnIndex == 0:
-            return Integer(rowIndex + 1)  # return as int, not str
+            return Integer(rowIndex + 1)  
         elif columnIndex == 1:
             return logEntry._method
         elif columnIndex == 2:
@@ -818,6 +912,7 @@ class TableSelectionListener(ListSelectionListener):
         # Create Evidence tab only if result == "Possible(?)" and modified response contains keywords
         try:
             if getattr(logEntry, "result", "") == "Possible(?)" and logEntry._modifiedRequestResponse:
+                print("[*]Evidence process...")
                 resp_bytes = logEntry._modifiedRequestResponse.getResponse()
                 if resp_bytes:
                     # get body bytes properly
@@ -832,19 +927,20 @@ class TableSelectionListener(ListSelectionListener):
                         except Exception:
                             body_text = ""
 
-                    if body_text and any(err in body_text.lower() for err in getattr(self._extender, "_sql_errors", [])):
+                    sql_signatures = self.get_sql_error_signatures()
+                    
+                    if body_text and any(err in body_text.lower() for err in sql_signatures):
+                        print("[*] Evidence: matched SQL signature for row", modelRow, "signatures:", sql_signatures)
                         # create and insert Evidence tab at position 2
                         evidence_comp = self._extender._createEvidenceTab(logEntry._modifiedRequestResponse)
                         self._extender._evidenceTab = evidence_comp
                         try:
-                            # insert at index 2 so order becomes Original|Modified|Evidence|Repaired|Configuration
+                            # insert at index 2 (Original|Modified|Evidence|Repaired|Configuration)
                             self._extender._tabbedPane.insertTab("Evidence", None, evidence_comp, None, 2)
-                            # auto-switch to evidence tab
                             idx = self._extender._tabbedPane.indexOfComponent(evidence_comp)
                             if idx != -1:
                                 self._extender._tabbedPane.setSelectedIndex(idx)
                         except Exception:
-                            # if insertTab fails, try addTab (fallback)
                             try:
                                 self._extender._tabbedPane.addTab("Evidence", evidence_comp)
                             except:
