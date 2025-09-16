@@ -66,7 +66,7 @@ log, metrics, analytics, tracking, telemetry, ads
 ```
 
 - Unsupported Content-Types
-    Only the following response types are processed:
+   - Only the following response types are processed:
 ```arduino
 text/html, json, x-www-form-urlencoded
 ```
@@ -89,10 +89,13 @@ text/html, json, x-www-form-urlencoded
 ## 📝 Usability & Reporting
 - [X] Log Management
     - [X] Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
-- [ ] Scope Restriction
-    - [ ] Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
+- [X] Dynamic Rule
+    - [X] Dynamically set unwanted paths and extensions
+    - [X] Dynamically set SQL Error signatures
 - [X] Evidence View 
     - [X] Replace the plain text viewer with a Burp-style message editor for better readability and context.
+- [ ] Scope Restriction
+    - [ ] Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
 - [ ] Persistence with Burp Project File
     - [ ] To include the logging in the extension inside the burp file.
 - [ ] Severity Scoring:
@@ -100,6 +103,3 @@ text/html, json, x-www-form-urlencoded
         - [ ] High: Known SQL error message detected.
         - [ ] Medium: Response code/length anomaly.
         - [ ] Low: Only slight timing deviation.
-- [X] Dynamic Rule
-    - [X] Dynamically set unwanted paths and extensions
-    - [X] Dynamically set SQL Error signatures
