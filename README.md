@@ -88,8 +88,8 @@ text/html, json, xml, x-www-form-urlencoded
     - [X] Add a "Clear Logs" option in the Configuration panel for easier session cleanup.
 - [ ] Scope Restriction
     - [ ] Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
-- [ ] Evidence View 
-    - [ ] Replace the plain text viewer with a Burp-style message editor for better readability and context.
+- [X] Evidence View 
+    - [X] Replace the plain text viewer with a Burp-style message editor for better readability and context.
 - [ ] Persistence with Burp Project File
     - [ ] To include the logging in the extension inside the burp file.
 - [ ] Severity Scoring:

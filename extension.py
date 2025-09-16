@@ -4,6 +4,7 @@
 
 import sys
 import threading
+import re
 
 # Handle Python 2 encoding
 if sys.version_info[0] == 2:
@@ -262,7 +263,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                         result = "Possible(?)"
                         for err in sql_signatures:
                             if err in body:
-                                print("  matched keyword:", err)
+                                print("  Matched keyword:", err)
 
                 # Build repaired request (param + '')
                 repairedRequestResponse = self._performSQLInjection(messageInfo, param, "''")
@@ -314,7 +315,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         try:
             method = self._helpers.analyzeRequest(messageInfo).getMethod()
             url = self._helpers.analyzeRequest(messageInfo).getUrl()
-            sql_signatures = self.get_sql_error_signatures()
+            sql_signatures = self._extender.get_sql_error_signatures()
 
             import copy, json
             mutated = copy.deepcopy(parsed_json)
@@ -340,6 +341,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 body = resp[respInfo.getBodyOffset():].tostring().lower()
                 if any(err in body for err in sql_signatures):
                     result = "Possible(?)"
+                    for err in sql_signatures:
+                            if err in body:
+                                print("  Matched keyword:", err)
+                        
 
             # Repaired variant
             repaired = copy.deepcopy(parsed_json)
@@ -556,7 +561,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         return panel
     
     def saveSqlSignatures(self, event):
-        self._sqlErrorList = self.get_sql_error_signatures()
+        self._sqlErrorList = self._extender.get_sql_error_signatures()
         self.sql_signatures = self._sqlErrorList
 
     def clearSqlSignatures(self, event):
@@ -569,8 +574,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             return [s.lower() for s in self._sqlErrorList]
         text = (self._sqlErrorArea.getText() or "").strip()
         items = [s.strip().strip('"').strip("'") for s in text.split(",") if s.strip()]
-        print("[*] Fetching updated signature...")
-        print(items)
         return [it.lower() for it in items]
         
     def saveExtErrors(self, event):
@@ -647,7 +650,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         # Create a standard Burp message viewer (like Original/Modified tabs)
         viewer = self._callbacks.createMessageEditor(None, False)
         viewer.setMessage(messageInfo.getResponse(), False)
-        print("[*] Creating evidence tab...")
 
         try:
             # Extract body text for keyword highlighting
@@ -656,7 +658,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 resInfo = self._helpers.analyzeResponse(response)
                 body_bytes = response[resInfo.getBodyOffset():]
                 body_text = self._helpers.bytesToString(body_bytes)
-                sql_signatures = self.get_sql_error_signatures()
+                #sql_signatures = self._extender.get_sql_error_signatures()
 
                 # Build a JTextPane overlay for highlighting
                 textPane = JTextPane()
@@ -666,11 +668,11 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 highlighter = textPane.getHighlighter()
                 highlighter.removeAllHighlights()
                 painter = DefaultHighlighter.DefaultHighlightPainter(Color(255, 255, 0))
-
+                
+                sql_signatures = self.get_sql_error_signatures()
                 text_lower = body_text.lower()
                 for keyword in sql_signatures:
                     kw = keyword.lower()
-                    print("[*] keyword: ", kw)
                     start = 0
                     while True:
                         idx = text_lower.find(kw, start)
@@ -757,9 +759,8 @@ class ResultCellRenderer(DefaultTableCellRenderer):
             table, value, isSelected, hasFocus, row, column)
 
         if value == "Possible(?)":
-            # soft faded red
             comp.setBackground(Color(255, 230, 150))
-            comp.setForeground(Color(120, 60, 0))  # dark red text
+            comp.setForeground(Color(120, 60, 0))  
         else:
             comp.setBackground(Color.white)
             comp.setForeground(Color.black)
@@ -910,25 +911,24 @@ class TableSelectionListener(ListSelectionListener):
         # Create Evidence tab only if result == "Possible(?)" and modified response contains keywords
         try:
             if getattr(logEntry, "result", "") == "Possible(?)" and logEntry._modifiedRequestResponse:
-                print("[*]Evidence process...")
+
                 resp_bytes = logEntry._modifiedRequestResponse.getResponse()
+
                 if resp_bytes:
-                    # get body bytes properly
                     try:
                         resInfo = self._extender._helpers.analyzeResponse(resp_bytes)
                         body_bytes = resp_bytes[resInfo.getBodyOffset():]
                         body_text = self._extender._helpers.bytesToString(body_bytes)
-                    except Exception:
-                        # fallback to tostring if helpers conversion fails
+                    except Exception as e:
+                        print("[ERROR] analyzeResponse/bytesToString failed:", e)
                         try:
                             body_text = resp_bytes.tostring()
                         except Exception:
                             body_text = ""
-
-                    sql_signatures = self.get_sql_error_signatures()
+                    
+                    sql_signatures = self._extender.get_sql_error_signatures()
                     
                     if body_text and any(err in body_text.lower() for err in sql_signatures):
-                        print("[*] Evidence: matched SQL signature for row", modelRow, "signatures:", sql_signatures)
                         # create and insert Evidence tab at position 2
                         evidence_comp = self._extender._createEvidenceTab(logEntry._modifiedRequestResponse)
                         self._extender._evidenceTab = evidence_comp
