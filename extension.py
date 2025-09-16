@@ -558,7 +558,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def saveSqlSignatures(self, event):
         self._sqlErrorList = self.get_sql_error_signatures()
         self.sql_signatures = self._sqlErrorList
-        print("[*] SQL Signature updated:", self.sql_signatures)
 
     def clearSqlSignatures(self, event):
         self._sqlErrorArea.setText("")
@@ -577,7 +576,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def saveExtErrors(self, event):
         self._extErrorList = self.get_excluded_extensions()
         self.excluded_exts = self._extErrorList
-        print("[*] Excluded Extension updated:", self._extErrorList)
 
     def clearExtErrors(self, event):
         self._notExtensionArea.setText("")
