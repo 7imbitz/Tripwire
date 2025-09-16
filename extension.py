@@ -217,7 +217,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             responseInfo = self._helpers.analyzeResponse(originalResponse)
             headers = responseInfo.getHeaders()
             contentType = next((h for h in headers if h.lower().startswith("content-type")), "")
-            if not any(ct in contentType.lower() for ct in ["text/html", "json", "xml", "x-www-form-urlencoded"]):
+            if not any(ct in contentType.lower() for ct in ["text/html", "json", "x-www-form-urlencoded"]):
                 return
 
             # Extract non-cookie parameters

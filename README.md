@@ -27,7 +27,7 @@ git clone https://github.com/7imbitz/Tripwire.git
 
 1. After installation, open the Tripwire tab in Burp Suite.
 2. Go to the Configuration tab to control logging.
-    - The "Capture ON" button enables or disables traffic capture (enabled by default).
+    - The "Capture ON" button enables or disables traffic capture (disabled by default).
 4. Browse the target application as usual; Tripwire will automatically analyze requests with parameters.
 5. If potential SQLi is detected, the Result column will display "Possible(?)".
 6. An Evidence tab will be created, showing the response body with highlighted SQL-related keywords.
@@ -37,7 +37,7 @@ git clone https://github.com/7imbitz/Tripwire.git
 
 Tripwire inspects responses for common SQL error fingerprints after injecting payloads into request parameters.
 
-**SQL error signatures:**
+**Default SQL error signatures:**
 ```python
 sql_errors = [
     "sql syntax", "mysql", "odbc", "oracle", "ora-",
@@ -45,19 +45,22 @@ sql_errors = [
 ]
 ```
 
-If any of these keywords are detected in the modified response, the request is flagged as "Possible(?)".
+If any of these keywords are detected in the modified response, the request is flagged as "Possible(?)". User can
+dynamically set the SQL Error Signature in the Configuration tab.
 
 # 🚫 Requests Ignored by Tripwire
 
-- Static files
-    Requests for static assets are excluded to reduce noise:
+- Default Static files
+    - Requests for static assets are excluded to reduce noise:
 ```arduino
 .js, .css, .png, .jpg, .jpeg, .gif, .ico,
 .svg, .woff, .woff2, .ttf, .eot, .map, .mp4, .webm
 ```
 
+User can dynamically set the extension to be excluded in the Configuration tab.
+
 - Unwanted paths
-    Requests containing logging or telemetry keywords are skipped:
+    - Requests containing logging or telemetry keywords are skipped:
 ```arduino
 log, metrics, analytics, tracking, telemetry, ads
 ```
@@ -65,7 +68,7 @@ log, metrics, analytics, tracking, telemetry, ads
 - Unsupported Content-Types
     Only the following response types are processed:
 ```arduino
-text/html, json, xml, x-www-form-urlencoded
+text/html, json, x-www-form-urlencoded
 ```
 
 # ⚠ Current Limitations
