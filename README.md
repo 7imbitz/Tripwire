@@ -4,6 +4,8 @@ Burp Suite Extension for Detecting "Low-Hanging Fruit" SQL Injection Vulnerabili
 
 Tripwire is a Burp Suite extension that automates the detection of common SQL Injection (SQLi) vulnerabilities. It is designed to assist security testers by highlighting potential SQLi issues during manual testing, saving time and effort when identifying "low-hanging fruit" injection points.
 
+![Tripwire Example](Tripwire_Example.png)
+
 # 📦 Installation
 
 1. Download Burp Suite
