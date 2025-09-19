@@ -15,7 +15,7 @@ if sys.version_info[0] == 2:
         pass
 
 # Burp imports
-from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController
+from burp import IBurpExtender, ITab, IHttpListener, IMessageEditorController, IScanIssue
 
 # Java imports
 from java.lang import Runnable, Integer
@@ -299,6 +299,30 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     repairedRequestResponse,
                     result
                 )
+                
+                if result == "Possible(?)":
+                    try:
+                        # Ensure url is a java.net.URL (you already have `url`)
+                        issue_detail = ("The parameter <b>{}</b> produced a response containing "
+                                        "<i>SQL error signatures</i>.").format(paramName)
+                        evidence_msgs = []
+                        if modifiedRequestResponse:
+                            evidence_msgs.append(modifiedRequestResponse)
+                        # optionally include the original request/response for context:
+                        evidence_msgs.append(messageInfo)
+                        issue = CustomScanIssue(
+                            messageInfo.getHttpService(),
+                            url,
+                            [modifiedRequestResponse],                # original request/response for context
+                            "Possible SQL Injection",     # issue name
+                            issue_detail,
+                            "Medium",                     # severity
+                            "Firm"                        # confidence
+                        )
+                        # Register/report the issue with Burp
+                        self._callbacks.addScanIssue(issue)
+                    except Exception as e:
+                        print("Error adding scan issue:", e)
 
                 # Add to log thread-safely
                 with self._lock:
@@ -992,3 +1016,46 @@ class UpdateTableRunnable(Runnable):
     def run(self):
         """Execute the table update"""
         self._tableModel.fireTableRowsInserted(self._row, self._row)
+        
+class CustomScanIssue(IScanIssue):
+    def __init__(self, httpService, url, httpMessages, name, detail, severity, confidence):
+        self._httpService = httpService
+        self._url = url
+        self._httpMessages = httpMessages
+        self._name = name
+        self._detail = detail
+        self._severity = severity
+        self._confidence = confidence
+
+    def getUrl(self):
+        return self._url
+
+    def getIssueName(self):
+        return self._name
+
+    def getIssueType(self):
+        return 0  # Custom issue (0 = user-defined)
+
+    def getSeverity(self):
+        return self._severity
+
+    def getConfidence(self):
+        return self._confidence
+
+    def getIssueBackground(self):
+        return None
+
+    def getRemediationBackground(self):
+        return None
+
+    def getIssueDetail(self):
+        return self._detail
+
+    def getRemediationDetail(self):
+        return None
+
+    def getHttpMessages(self):
+        return self._httpMessages
+
+    def getHttpService(self):
+        return self._httpService
