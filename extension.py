@@ -53,6 +53,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         
         self._captureEnabled = False
 
+        self.only_in_scope = True
+        
         self._setupUI()
 
         self._evidenceTab = None
@@ -185,6 +187,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         if messageIsRequest:
             return
         
+        if getattr(self, "only_in_scope", False):
+            if not self._is_in_scope(messageInfo):
+                return
+        
         # Process in separate thread to avoid blocking
         t = threading.Thread(target=self._processMessage, args=[messageInfo])
         t.daemon = True
@@ -193,6 +199,10 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def _processMessage(self, messageInfo):
         """Process a single HTTP message for SQL injection testing"""
         try:
+            # Respect only_in_scope toggle again (defensive)
+            if getattr(self, "only_in_scope", False) and not self._is_in_scope(messageInfo):
+                return
+            
             originalRequest = messageInfo.getRequest()
             originalResponse = messageInfo.getResponse()
             if originalResponse is None:
@@ -443,6 +453,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         topPanel = JPanel(FlowLayout(FlowLayout.CENTER, 40, 10))  
         # (20 = horizontal gap, 10 = vertical gap, tweak if needed)
 
+        #----- Capture traffic button -----
         if getattr(self, "_captureEnabled", False):
             btn_text, btn_bg = "Capture ON", Color(0, 200, 0)
         else:
@@ -464,12 +475,34 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
         self._captureButton.addActionListener(toggleCapture)
         topPanel.add(self._captureButton)
+        
+        #----- only in-scope button -----
+        if getattr(self, "only_in_scope", False):
+            scope_text, scope_bg = "In-Scope ON", Color(0, 200, 0)
+        else:
+            scope_text, scope_bg = "In-Scope OFF", None
 
-        # --- Clear Logs Button ---
+        self._scopeButton = JButton(scope_text)
+        if scope_bg:
+            self._scopeButton.setBackground(scope_bg)
+        self._scopeButton.setPreferredSize(Dimension(120, 35))
+        
+        def toggleScope(_):
+            self.only_in_scope = not getattr(self, "only_in_scope", False)
+
+            if self.only_in_scope:
+                self._scopeButton.setText("In-Scope ON")
+                self._scopeButton.setBackground(Color(0, 200, 0))
+            else:
+                self._scopeButton.setText("In-Scope OFF")
+                self._scopeButton.setBackground(None)
+        
+        self._scopeButton.addActionListener(toggleScope)
+        topPanel.add(self._scopeButton)
+
+        #----- Clear Logs Button -----
         clearBtn = JButton("Clear Logs")
         clearBtn.setPreferredSize(Dimension(120,35))
-        topPanel.add(clearBtn)
-        panel.add(topPanel, BorderLayout.NORTH)
 
         def onClear(_):
             try:
@@ -500,6 +533,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 print("Error clearing logs:", e)
 
         clearBtn.addActionListener(onClear)
+        topPanel.add(clearBtn)
+        panel.add(topPanel, BorderLayout.NORTH)
 
         panel.add(JSeparator(SwingConstants.HORIZONTAL))
         
@@ -559,6 +594,14 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         panel.add(excludePanel, BorderLayout.SOUTH)
         
         return panel
+    
+    def _is_in_scope(self, messageInfo):
+        try:
+            analyzed = self._helpers.analyzeRequest(messageInfo)
+            url = analyzed.getUrl()
+            return self._callbacks.isInScope(url)
+        except Exception:
+            return False
     
     def saveSqlSignatures(self, event):
         self._sqlErrorList = self._extender.get_sql_error_signatures()
@@ -734,24 +777,6 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
         return (self._currentlyDisplayedItem.getResponse() 
                 if self._currentlyDisplayedItem else None)
     
-    # ActionListener implementation
-    def actionPerformed(self, actionEvent):
-        if actionEvent.getSource() == self._captureButton:
-            self._captureEnabled = not getattr(self, '_captureEnabled', False)
-            if self._captureEnabled:
-                self._captureButton.setText("Capture ON")
-                try:
-                    self._captureButton.setBackground(Color(0, 200, 0))  # green
-                    self._captureButton.setOpaque(True)
-                except:
-                    pass
-            else:
-                self._captureButton.setText("Capture OFF")
-                try:
-                    self._captureButton.setBackground(None)  # default
-                    self._captureButton.setOpaque(False)
-                except:
-                    pass
 
 class ResultCellRenderer(DefaultTableCellRenderer):
     def getTableCellRendererComponent(self, table, value, isSelected, hasFocus, row, column):
