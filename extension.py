@@ -270,7 +270,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     sql_signatures = self.get_sql_error_signatures()
 
                     if any(err in body for err in sql_signatures):
-                        result = "Possible(?)"
+                        result = "Possible"
                         for err in sql_signatures:
                             if err in body:
                                 print("  Matched keyword:", err)
@@ -300,7 +300,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                     result
                 )
                 
-                if result == "Possible(?)":
+                if result == "Possible":
                     try:
                         # Ensure url is a java.net.URL (you already have `url`)
                         issue_detail = ("The parameter <b>{}</b> produced a response containing "
@@ -374,7 +374,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 respInfo = self._helpers.analyzeResponse(resp)
                 body = resp[respInfo.getBodyOffset():].tostring().lower()
                 if any(err in body for err in sql_signatures):
-                    result = "Possible(?)"
+                    result = "Possible"
                     for err in sql_signatures:
                             if err in body:
                                 print("  Matched keyword:", err)
@@ -702,8 +702,8 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 self._tabs.remove(index)
             self._evidenceTab = None
 
-        # Add evidence tab only if result == "Possible(?)"
-        if logEntry.result == "Possible(?)" and logEntry.modifiedMessage:
+        # Add evidence tab only if result == "Possible"
+        if logEntry.result == "Possible" and logEntry.modifiedMessage:
             modifiedResponse = logEntry.modifiedMessage.getResponse()
             if modifiedResponse:
                 responseInfo = self._helpers.analyzeResponse(modifiedResponse)
@@ -807,7 +807,7 @@ class ResultCellRenderer(DefaultTableCellRenderer):
         comp = super(ResultCellRenderer, self).getTableCellRendererComponent(
             table, value, isSelected, hasFocus, row, column)
 
-        if value == "Possible(?)":
+        if value == "Possible":
             comp.setBackground(Color(255, 230, 150))
             comp.setForeground(Color(120, 60, 0))  
         else:
@@ -957,9 +957,9 @@ class TableSelectionListener(ListSelectionListener):
         # Remove previous Evidence tab (if any)
         self._removeEvidenceTab()
 
-        # Create Evidence tab only if result == "Possible(?)" and modified response contains keywords
+        # Create Evidence tab only if result == "Possible" and modified response contains keywords
         try:
-            if getattr(logEntry, "result", "") == "Possible(?)" and logEntry._modifiedRequestResponse:
+            if getattr(logEntry, "result", "") == "Possible" and logEntry._modifiedRequestResponse:
 
                 resp_bytes = logEntry._modifiedRequestResponse.getResponse()
 
