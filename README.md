@@ -78,13 +78,6 @@ text/html, json, x-www-form-urlencoded
 ## 🔍 Detection Improvements
 - [ ] Expanded SQL Error Fingerprints
     - [ ] To add a broader dictionary of generic database error messages, mapped to their respective DBMS for more accurate detection.
-- [ ] Context-Aware Payload Injection:
-    - [ ] _Numeric params_
-        - [ ] break -> `/0`
-        - [ ] repair -> `/1`
-    - [ ] _String params_
-        - [ ] break -> `'`
-        - [ ] repair -> `''`
 - [ ] Improve Detection
     - [ ] If the repaired request’s response length closely matches the original request, this is treated as a stronger indicator of potential SQLi.
 
@@ -102,8 +95,3 @@ text/html, json, x-www-form-urlencoded
     - [X] To include the trigget in the issue tab of burp suite
 - [ ] Persistence with Burp Project File
     - [ ] To include the logging in the extension inside the burp file.
-- [ ] Severity Scoring:
-    - [ ] To flag results with a confidence level:
-        - [ ] High: Known SQL error message detected.
-        - [ ] Medium: Response code/length anomaly.
-        - [ ] Low: Only slight timing deviation.
