@@ -31,7 +31,7 @@ git clone https://github.com/7imbitz/Tripwire.git
 2. Go to the Configuration tab to control logging.
     - The "Capture ON" button enables or disables traffic capture (disabled by default).
 4. Browse the target application as usual; Tripwire will automatically analyze requests with parameters.
-5. If potential SQLi is detected, the Result column will display "Possible(?)".
+5. If potential SQLi is detected, the Result column will display "Possible".
 6. An Evidence tab will be created, showing the response body with highlighted SQL-related keywords.
 7. Review the highlighted response and manually confirm whether the vulnerability is exploitable.
 
@@ -47,7 +47,7 @@ sql_errors = [
 ]
 ```
 
-If any of these keywords are detected in the modified response, the request is flagged as "Possible(?)". User can
+If any of these keywords are detected in the modified response, the request is flagged as "Possible". User can
 dynamically set the SQL Error Signature in the Configuration tab.
 
 # 🚫 Requests Ignored by Tripwire
@@ -98,8 +98,8 @@ text/html, json, x-www-form-urlencoded
     - [X] Replace the plain text viewer with a Burp-style message editor for better readability and context.
 - [X] Scope Restriction
     - [X] Only in-scope requests should ideally be analyzed, but this feature is not yet implemented.
-- [ ] Integrate with burp's issue tab (_Burp Suite Pro only_)
-    - [ ] To include the trigget in the issue tab of burp suite
+- [X] Integrate with burp's issue tab (_Burp Suite Pro only_)
+    - [X] To include the trigget in the issue tab of burp suite
 - [ ] Persistence with Burp Project File
     - [ ] To include the logging in the extension inside the burp file.
 - [ ] Severity Scoring:
