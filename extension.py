@@ -6,6 +6,11 @@ import sys
 import threading
 import re
 
+try:
+    basestring
+except NameError:
+    basestring = str
+
 # Handle Python 2 encoding
 if sys.version_info[0] == 2:
     try:
@@ -199,7 +204,7 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
     def _processMessage(self, messageInfo):
         """Process a single HTTP message for SQL injection testing"""
         try:
-            # Respect only_in_scope toggle again (defensive)
+            # Respect only_in_scope toggle
             if getattr(self, "only_in_scope", False) and not self._is_in_scope(messageInfo):
                 return
             
@@ -218,12 +223,12 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
             if any(urlPath.endswith(ext) for ext in excluded_exts):
                 return
 
-            # --- 2. Filter out unwanted paths (logging/analytics/etc.) ---
+            # Filter out unwanted paths
             SKIP_KEYWORDS = ["log", "metrics", "analytics", "tracking", "telemetry", "ads", "embed"]
             if any(kw in urlPath for kw in SKIP_KEYWORDS):
                 return
 
-            # --- 3. Filter based on Content-Type ---
+            # Filter based on Content-Type
             responseInfo = self._helpers.analyzeResponse(originalResponse)
             headers = responseInfo.getHeaders()
             contentType = next((h for h in headers if h.lower().startswith("content-type")), "")
@@ -232,142 +237,105 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
 
             # Extract non-cookie parameters
             parameters = [p for p in requestInfo.getParameters() if p.getType() != p.PARAM_COOKIE]
-            if not parameters:
-                try:
-                    body_bytes = originalRequest[requestInfo.getBodyOffset():]
-                    body_str = self._helpers.bytesToString(body_bytes)
+            
+            # Check if request body contains JSON
+            is_json_request = False
+            try:
+                body_bytes = originalRequest[requestInfo.getBodyOffset():]
+                body_str = self._helpers.bytesToString(body_bytes)
 
-                    content_type = ""
-                    for h in requestInfo.getHeaders():
-                        if h.lower().startswith("content-type"):
-                            content_type = h.lower()
-                            break
+                content_type = ""
+                for h in requestInfo.getHeaders():
+                    if h.lower().startswith("content-type"):
+                        content_type = h.lower()
+                        break
 
-                    if "application/json" in content_type:
-                        import json
-                        try:
-                            parsed_json = json.loads(body_str)
-                            if isinstance(parsed_json, dict):
-                                self._processJsonRecursive(messageInfo, parsed_json, [])
-                        except Exception as e:
-                            print("JSON parse failed:", e)
-                except Exception as e:
-                    print("Error handling JSON body:", e)
-
-            # For each parameter, test individually
-            for param in parameters:
-                paramName = param.getName()
-
-                # Build modified request (param + ')
-                modifiedRequestResponse = self._performSQLInjection(messageInfo, param, "'")
-                modifiedResponse = modifiedRequestResponse.getResponse() if modifiedRequestResponse else None
-                result = ""
-
-                if modifiedResponse:
-                    responseInfo = self._helpers.analyzeResponse(modifiedResponse)
-                    body = modifiedResponse[responseInfo.getBodyOffset():].tostring().lower()
-                    
-                    sql_signatures = self.get_sql_error_signatures()
-
-                    if any(err in body for err in sql_signatures):
-                        result = "Possible"
-                        for err in sql_signatures:
-                            if err in body:
-                                print("  Matched keyword:", err)
-
-                # Build repaired request (param + '')
-                repairedRequestResponse = self._performSQLInjection(messageInfo, param, "''")
-
-                # Calculate content lengths
-                originalLen = len(originalResponse) if originalResponse else 0
-                modifiedLen = (len(modifiedRequestResponse.getResponse())
-                            if modifiedRequestResponse and modifiedRequestResponse.getResponse() else 0)
-                repairedLen = (len(repairedRequestResponse.getResponse())
-                            if repairedRequestResponse and repairedRequestResponse.getResponse() else 0)
-
-                # Create log entry (per parameter)
-                logEntry = LogEntry(
-                    self.currentRequestNumber,
-                    method,
-                    str(url),
-                    originalLen,
-                    modifiedLen,
-                    repairedLen,
-                    paramName,
-                    messageInfo,
-                    modifiedRequestResponse,
-                    repairedRequestResponse,
-                    result
-                )
-                
-                if result == "Possible":
+                if "application/json" in content_type:
+                    is_json_request = True
+                    import json
                     try:
-                        # Ensure url is a java.net.URL (you already have `url`)
-                        issue_detail = ("The parameter <b>{}</b> produced a response containing "
-                                        "<i>SQL error signatures</i>.").format(paramName)
-                        evidence_msgs = []
-                        if modifiedRequestResponse:
-                            evidence_msgs.append(modifiedRequestResponse)
-                        # optionally include the original request/response for context:
-                        evidence_msgs.append(messageInfo)
-                        issue = CustomScanIssue(
-                            messageInfo.getHttpService(),
-                            url,
-                            [modifiedRequestResponse],                # original request/response for context
-                            "Possible SQL Injection",     # issue name
-                            issue_detail,
-                            "Medium",                     # severity
-                            "Firm"                        # confidence
-                        )
-                        # Register/report the issue with Burp
-                        self._callbacks.addScanIssue(issue)
+                        parsed_json = json.loads(body_str)
+                        if isinstance(parsed_json, dict):
+                            # Recursively find all testable paths in the JSON
+                            paths = []
+                            self._collectJsonPaths(parsed_json, [], paths)
+                            
+                            # Test each path
+                            for path in paths:
+                                self._testJsonPath(messageInfo, parsed_json, path)
                     except Exception as e:
-                        print("Error adding scan issue:", e)
+                        print("JSON parse failed:", e)
+            except Exception as e:
+                print("Error handling JSON body:", e)
 
-                # Add to log thread-safely
-                with self._lock:
-                    self._log.add(logEntry)
-                    row = self._log.size() - 1
-                    SwingUtilities.invokeLater(UpdateTableRunnable(self._tableModel, row))
-                    self.currentRequestNumber += 1
+            # For regular parameters (non-JSON), test individually
+            if not is_json_request:
+                for param in parameters:
+                    self._testParameter(messageInfo, param)
 
         except Exception as e:
             print("Error processing message: " + str(e))
     
-    def _processJsonRecursive(self, messageInfo, node, path):
-        """Recursively walk JSON dicts/lists and inject payloads at each key/value"""
-        if isinstance(node, dict):
-            for key, value in node.items():
-                current_path = path + [key]
-                self._processJsonParam(messageInfo, current_path, node)
-                self._processJsonRecursive(messageInfo, value, current_path)
-        elif isinstance(node, list):
-            for i, item in enumerate(node):
-                self._processJsonRecursive(messageInfo, item, path + [str(i)])
-    
-    def _processJsonParam(self, messageInfo, path, parsed_json):
+    def _collectJsonPaths(self, data, current_path, paths):
+        """
+        Recursively collect all paths to testable values in JSON structure.
+        A path is a list like ['queries', 0, 'rawSql'] representing nested access.
+        Only collects STRING values to avoid breaking integer/boolean fields.
+        """
+        if isinstance(data, dict):
+            for key, value in data.items():
+                new_path = current_path + [key]
+                if isinstance(value, (str, basestring)):
+                    # Only test string values to preserve data types
+                    paths.append(new_path)
+                elif isinstance(value, (dict, list)):
+                    # Recurse deeper
+                    self._collectJsonPaths(value, new_path, paths)
+        
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                new_path = current_path + [i]
+                if isinstance(item, (str, basestring)):
+                    # Only test string values
+                    paths.append(new_path)
+                elif isinstance(item, (dict, list)):
+                    self._collectJsonPaths(item, new_path, paths)
+
+
+    def _testJsonPath(self, messageInfo, parsed_json, path):
+        """
+        Test a specific JSON path by injecting SQL payloads.
+        path is like ['queries', 0, 'rawSql']
+        """
         try:
+            import copy, json
+            
             method = self._helpers.analyzeRequest(messageInfo).getMethod()
             url = self._helpers.analyzeRequest(messageInfo).getUrl()
-            sql_signatures = self._extender.get_sql_error_signatures()
-
-            import copy, json
+            sql_signatures = self.get_sql_error_signatures()
+            
+            # Get original value
+            original_value = self._getJsonValue(parsed_json, path)
+            if original_value is None:
+                return
+            
+            # Only test if it's a string
+            if not isinstance(original_value, (str, basestring)):
+                return
+            
+            # Test with single quote (')
             mutated = copy.deepcopy(parsed_json)
-
-            # Walk down path and inject
-            node = mutated
-            for p in path[:-1]:
-                node = node[p]
-            last_key = path[-1]
-            node[last_key] = str(node[last_key]) + "'"
-
-            new_body = json.dumps(mutated)
+            # Keep it as string, don't convert types
+            mutated_value = original_value + "'"
+            self._setJsonValue(mutated, path, mutated_value)
+            
             headers = self._helpers.analyzeRequest(messageInfo).getHeaders()
+            new_body = json.dumps(mutated)
             new_message = self._helpers.buildHttpMessage(headers, new_body)
-
             httpService = messageInfo.getHttpService()
             modifiedReqResp = self._callbacks.makeHttpRequest(httpService, new_message)
-
+            
+            # Check for SQL errors
             result = ""
             if modifiedReqResp and modifiedReqResp.getResponse():
                 resp = modifiedReqResp.getResponse()
@@ -375,43 +343,185 @@ class BurpExtender(IBurpExtender, ITab, IHttpListener, IMessageEditorController,
                 body = resp[respInfo.getBodyOffset():].tostring().lower()
                 if any(err in body for err in sql_signatures):
                     result = "Possible"
+                    print("  [!] SQL Error found in path:", self._formatJsonPath(path))
                     for err in sql_signatures:
-                            if err in body:
-                                print("  Matched keyword:", err)
-                        
-
-            # Repaired variant
+                        if err in body:
+                            print("      Matched keyword:", err)
+            
+            # Test with repaired quote ('')
             repaired = copy.deepcopy(parsed_json)
-            node = repaired
-            for p in path[:-1]:
-                node = node[p]
-            node[last_key] = str(node[last_key]) + "''"
+            repaired_value = original_value + "''"
+            self._setJsonValue(repaired, path, repaired_value)
+            
             repaired_body = json.dumps(repaired)
             repaired_msg = self._helpers.buildHttpMessage(headers, repaired_body)
             repairedReqResp = self._callbacks.makeHttpRequest(httpService, repaired_msg)
-
+            
+            # Create log entry
             logEntry = LogEntry(
                 self.currentRequestNumber,
                 method,
                 str(url),
                 len(messageInfo.getResponse()) if messageInfo.getResponse() else 0,
-                len(modifiedReqResp.getResponse()) if modifiedReqResp else 0,
-                len(repairedReqResp.getResponse()) if repairedReqResp else 0,
-                ".".join(path),  # key path like user.email
+                len(modifiedReqResp.getResponse()) if modifiedReqResp and modifiedReqResp.getResponse() else 0,
+                len(repairedReqResp.getResponse()) if repairedReqResp and repairedReqResp.getResponse() else 0,
+                self._formatJsonPath(path),
                 messageInfo,
                 modifiedReqResp,
                 repairedReqResp,
                 result
             )
-
+            
+            # Add scan issue if SQL injection found
+            if result == "Possible":
+                try:
+                    issue_detail = ("The JSON parameter <b>{}</b> produced a response containing "
+                                "<i>SQL error signatures</i>.").format(self._formatJsonPath(path))
+                    issue = CustomScanIssue(
+                        messageInfo.getHttpService(),
+                        url,
+                        [modifiedReqResp],
+                        "Possible SQL Injection (JSON)",
+                        issue_detail,
+                        "Medium",
+                        "Firm"
+                    )
+                    self._callbacks.addScanIssue(issue)
+                except Exception as e:
+                    print("Error adding scan issue:", e)
+            
+            # Add to log
             with self._lock:
                 self._log.add(logEntry)
                 row = self._log.size() - 1
                 SwingUtilities.invokeLater(UpdateTableRunnable(self._tableModel, row))
                 self.currentRequestNumber += 1
-
+                
         except Exception as e:
-            print("Error processing JSON param:", e)
+            print("Error testing JSON path:", e)
+
+
+    def _testParameter(self, messageInfo, param):
+        """Test a regular (non-JSON) parameter"""
+        paramName = param.getName()
+        
+        # Build modified request (param + ')
+        modifiedRequestResponse = self._performSQLInjection(messageInfo, param, "'")
+        modifiedResponse = modifiedRequestResponse.getResponse() if modifiedRequestResponse else None
+        result = ""
+        
+        if modifiedResponse:
+            responseInfo = self._helpers.analyzeResponse(modifiedResponse)
+            body = modifiedResponse[responseInfo.getBodyOffset():].tostring().lower()
+            
+            sql_signatures = self.get_sql_error_signatures()
+            
+            if any(err in body for err in sql_signatures):
+                result = "Possible"
+                for err in sql_signatures:
+                    if err in body:
+                        print("  Matched keyword:", err)
+        
+        # Build repaired request (param + '')
+        repairedRequestResponse = self._performSQLInjection(messageInfo, param, "''")
+        
+        requestInfo = self._helpers.analyzeRequest(messageInfo)
+        method = requestInfo.getMethod()
+        url = requestInfo.getUrl()
+        
+        # Calculate content lengths
+        originalLen = len(messageInfo.getResponse()) if messageInfo.getResponse() else 0
+        modifiedLen = (len(modifiedRequestResponse.getResponse())
+                    if modifiedRequestResponse and modifiedRequestResponse.getResponse() else 0)
+        repairedLen = (len(repairedRequestResponse.getResponse())
+                    if repairedRequestResponse and repairedRequestResponse.getResponse() else 0)
+        
+        # Create log entry
+        logEntry = LogEntry(
+            self.currentRequestNumber,
+            method,
+            str(url),
+            originalLen,
+            modifiedLen,
+            repairedLen,
+            paramName,
+            messageInfo,
+            modifiedRequestResponse,
+            repairedRequestResponse,
+            result
+        )
+        
+        if result == "Possible":
+            try:
+                issue_detail = ("The parameter <b>{}</b> produced a response containing "
+                            "<i>SQL error signatures</i>.").format(paramName)
+                issue = CustomScanIssue(
+                    messageInfo.getHttpService(),
+                    url,
+                    [modifiedRequestResponse],
+                    "Possible SQL Injection",
+                    issue_detail,
+                    "Medium",
+                    "Firm"
+                )
+                self._callbacks.addScanIssue(issue)
+            except Exception as e:
+                print("Error adding scan issue:", e)
+        
+        # Add to log
+        with self._lock:
+            self._log.add(logEntry)
+            row = self._log.size() - 1
+            SwingUtilities.invokeLater(UpdateTableRunnable(self._tableModel, row))
+            self.currentRequestNumber += 1
+
+
+    def _getJsonValue(self, data, path):
+        """Navigate to a value in nested JSON using a path"""
+        try:
+            current = data
+            for key in path:
+                if isinstance(current, list):
+                    current = current[key]
+                else:
+                    current = current[key]
+            return current
+        except (KeyError, IndexError, TypeError):
+            return None
+
+
+    def _setJsonValue(self, data, path, value):
+        """Set a value in nested JSON using a path"""
+        try:
+            current = data
+            for key in path[:-1]:
+                if isinstance(current, list):
+                    current = current[key]
+                else:
+                    current = current[key]
+            
+            last_key = path[-1]
+            if isinstance(current, list):
+                current[last_key] = value
+            else:
+                current[last_key] = value
+        except (KeyError, IndexError, TypeError):
+            pass
+
+
+    def _formatJsonPath(self, path):
+        """
+        Convert list of keys like ['queries', 0, 'rawSql'] -> 'queries[0].rawSql'
+        """
+        formatted = ""
+        for i, p in enumerate(path):
+            if isinstance(p, int):
+                formatted += "[" + str(p) + "]"
+            else:
+                if i > 0 and not isinstance(path[i - 1], int):
+                    formatted += "."
+                formatted += str(p)
+        return formatted
     
     def _performSQLInjection(self, originalMessageInfo, param, payload):
         """Perform SQL injection by modifying a single parameter with the given payload"""
